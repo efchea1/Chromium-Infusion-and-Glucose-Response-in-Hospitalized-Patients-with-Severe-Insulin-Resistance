@@ -1,0 +1,236 @@
+---
+title: 'Case Study 2: Chromium Infusion Study: Statistical Analysis Plan'
+author: "Emmanuel Fle Chea"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+# Load needed libraries
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(forecast)
+library(knitr)
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+# Load datasets
+demographics <- read.csv("C:/Users/emman/OneDrive/Desktop/MPH Data Science - UMN/Biostatistical Consulting/Case_Study2/Cr demographics-1.csv", stringsAsFactors = FALSE)
+#View(demographics)
+
+glucose <- read.csv("C:/Users/emman/OneDrive/Desktop/MPH Data Science - UMN/Biostatistical Consulting/Case_Study2/Cr glucose-1.csv")
+#View(glucose)
+
+insulin <- read.csv("C:/Users/emman/OneDrive/Desktop/MPH Data Science - UMN/Biostatistical Consulting/Case_Study2/Cr insulin-3.csv")
+#View(insulin)
+```
+
+
+```{r}
+head(demographics)
+colnames(demographics)
+```
+
+```{r}
+# Clean column names before renaming
+colnames(demographics) <- gsub("\\s+", "", colnames(demographics))  # Remove spaces
+colnames(demographics) <- gsub("\\.", "_", colnames(demographics))  # Replace dots with underscores
+colnames(demographics) <- gsub("__+", "_", colnames(demographics))  # Remove double underscores
+colnames(demographics) <- gsub("_$", "", colnames(demographics))    # Remove trailing underscores
+
+# Verify the column names after cleaning
+colnames(demographics)
+```
+
+```{r}
+colnames(demographics)  # Print all column names
+
+# Find the correct column name
+correct_name <- colnames(demographics)[grepl("AIC", colnames(demographics))]
+
+# Rename it if necessary
+if (length(correct_name) > 0) {
+  demographics <- demographics %>%
+    rename(AIC_value = all_of(correct_name))
+}
+
+demographics <- demographics %>%
+  mutate(AIC_value = as.numeric(.data$A1C))  # Ensure it's correctly referenced
+```
+
+```{r}
+colnames(demographics)
+```
+
+
+
+```{r}
+table1 <- demographics %>%
+  summarise(
+    N = n(),
+    Mean_Age = mean(Age_yr, na.rm = TRUE),
+    Male_Count = sum(Sex == "M", na.rm = TRUE),
+    Female_Count = sum(Sex == "F", na.rm = TRUE),
+    Mean_Weight = mean(weight_kg, na.rm = TRUE),
+    Median_AIC = median(AIC_value, na.rm = TRUE),  # Correct column name
+    Missing_AIC_Count = sum(is.na(AIC_value)),  # Correct column name
+    Insulin_Users = sum(pre_insulin_use == "Yes", na.rm = TRUE)
+  )
+
+kable(table1)
+```
+
+
+```{r}
+colnames(glucose)
+colnames(insulin)
+colnames(demographics)
+```
+
+
+```{r}
+colnames(glucose) <- trimws(colnames(glucose))
+colnames(insulin) <- trimws(colnames(insulin))
+
+glucose <- glucose %>% rename(PT_ID = `Pt.ID`)
+insulin <- insulin %>% rename(PT_ID = `Pt.ID`)
+```
+
+
+
+```{r}
+colnames(glucose)
+colnames(insulin)
+colnames(demographics)
+```
+
+```{r}
+glucose$PT_ID <- as.character(glucose$PT_ID)
+insulin$PT_ID <- as.character(insulin$PT_ID)
+demographics$PT_ID <- as.character(demographics$PT_ID)
+```
+
+
+```{r}
+# Merge datasets
+merged_data <- glucose %>%
+  left_join(insulin, by = c("PT_ID", "Date", "Time")) %>%
+  left_join(demographics, by = "PT_ID")
+
+glimpse(merged_data)
+```
+
+```{r}
+summary(merged_data)
+str(merged_data)
+```
+
+```{r}
+# Convert Date and Time columns to datetime format
+merged_data$Datetime <- as.POSIXct(paste(merged_data$Date, merged_data$Time), format="%m/%d/%Y %H:%M")
+merged_data$Date_Cr_received <- as.Date(merged_data$Date_Cr_received, format="%m/%d/%Y")
+
+# Create Before_After_Cr column to classify data before or after chromium infusion
+merged_data$Before_After_Cr <- merged_data$Datetime < merged_data$Date_Cr_received
+```
+
+
+```{r}
+# Save corrected merged dataset
+write_csv(merged_data, "merged_data.csv")
+```
+
+
+
+```{r}
+# Remove rows with missing values in the required columns
+merged_data <- merged_data %>%
+  filter(!is.na(Insulin.units.hr), !is.na(Blood.glucose))
+
+# Verify that the 'Before_After_Cr' column is correctly created
+merged_data$Before_After_Cr <- merged_data$Datetime < merged_data$Date_Cr_received
+
+# Check the distribution of 'Before_After_Cr' values to ensure they're correct
+table(merged_data$Before_After_Cr)
+
+# Plot glucose levels over time for each patient
+ggplot(merged_data, aes(x = Datetime, y = Blood.glucose, color = as.factor(PT_ID))) +
+  geom_line() +
+  labs(title = "Glucose Levels Over Time for Each Patient", x = "Time", y = "Blood Glucose (mg/dL)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_minimal()
+
+# Plot insulin infusion rates before and after chromium administration
+ggplot(merged_data, aes(x = Datetime, y = Insulin.units.hr, color = as.factor(PT_ID))) +
+  geom_line(aes(linetype = Before_After_Cr)) +
+  labs(title = "Insulin Infusion Rates Before and After Chromium Administration", x = "Time", y = "Insulin Infusion Rate (Units/hr)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_minimal()
+```
+
+
+
+```{r}
+# GLM for glucose levels with a Gaussian distribution
+glm_glucose <- glm(Blood.glucose ~ Datetime + Insulin.units.hr + Age_yr + weight_kg + Sex, 
+                   data = merged_data, family = gaussian())
+summary(glm_glucose)
+
+# GLM for insulin infusion rates
+glm_insulin <- glm(Insulin.units.hr ~ Datetime + Blood.glucose + Age_yr + weight_kg + Sex, 
+                   data = merged_data, family = gaussian())
+summary(glm_insulin)
+```
+
+
+```{r}
+merged_data_sorted <- merged_data[order(merged_data$PT_ID, merged_data$Datetime), ]
+
+# Fit ARIMA model for glucose levels (for a single patient)
+glucose_ts <- ts(merged_data_sorted$Blood.glucose, frequency = 24)  
+
+# Fit ARIMA model
+fit_arima_glucose <- auto.arima(glucose_ts)
+summary(fit_arima_glucose)
+
+# Predict future glucose levels
+pred_glucose <- forecast(fit_arima_glucose, h = 10)
+plot(pred_glucose)
+```
+
+```{r}
+# Fixed effects regression for glucose levels
+lm_glucose <- lm(Blood.glucose ~ Datetime + Insulin.units.hr + Age_yr + weight_kg + Sex, data = merged_data)
+summary(lm_glucose)
+
+# Fixed effects regression for insulin units per hour
+lm_insulin <- lm(Insulin.units.hr ~ Datetime + Blood.glucose + Age_yr + weight_kg + Sex, data = merged_data)
+summary(lm_insulin)
+```
+
+
+```{r}
+# Subset the data based on insulin use
+insulin_users <- merged_data[merged_data$pre_insulin_use == "Yes", ]
+non_insulin_users <- merged_data[merged_data$pre_insulin_use == "No", ]
+
+# Perform t-test for glucose levels
+t_test_result <- t.test(insulin_users$Blood.glucose, non_insulin_users$Blood.glucose)
+print(t_test_result)
+```
+
+```{r}
+# Perform ANOVA for glucose levels based on insulin use
+anova_result <- aov(Blood.glucose ~ pre_insulin_use, data = merged_data)
+summary(anova_result)
+
+# Post-hoc test (Tukey HSD) to see specific group differences
+post_hoc_result <- TukeyHSD(anova_result)
+summary(post_hoc_result)
+```
+
