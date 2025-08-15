@@ -39,4 +39,10 @@ This project analyzes a retrospective dataset (n = 488) to evaluate the effect o
 
 ## Author
 **Emmanuel Fle Chea**  
-[GitHub](https://github.com/efchea1) | [LinkedIn](https://linkedin.com/in/emmanuel-fle-chea-ba0669129)
+[GitHub](https://github.com/efchea1) | [LinkedIn](https://linkedin.com/in/emmanuel-fle-chea)
+
+## 📄 License
+
+This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
+
+© 2025 Emmanuel Fle Chea. See the LICENSE file for full terms and usage guidelines.
